@@ -21,7 +21,7 @@ cask "macfan" do
       xattr -dr com.apple.quarantine /Applications/macfan.app
 
     ...or open System Settings > Privacy & Security and allow it there.
-    (Homebrew 7 removed , so that flag no longer exists.)
+    Homebrew 7 removed its no-quarantine flag, so that is the only route.
   EOS
 
   zap trash: [
