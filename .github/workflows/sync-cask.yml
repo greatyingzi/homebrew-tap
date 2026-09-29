@@ -1,0 +1,64 @@
+name: Sync the cask with the latest release
+
+# The safety net. A release bumps this cask through a deploy key, but a release
+# can also be cut without that step (a tag pushed by hand, a run on another
+# machine). Then the cask silently goes stale and every user's `brew upgrade`
+# says "already up to date" while newer releases exist. This job runs inside the
+# tap repository, whose own token can write to it, so it needs no secret and no
+# personal token: it checks the latest release once a day and commits the cask
+# when it has fallen behind.
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Bring Casks/macfan.rb up to the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="$(gh api repos/greatyingzi/macfan/releases/latest --jq '.tag_name')"
+          V="${TAG#v}"
+          echo "latest release: $TAG"
+
+          # The template is read from the released tag, so this repository cannot
+          # drift from the one the release scripts use.
+          gh api "repos/greatyingzi/macfan/contents/scripts/cask-template.rb?ref=${TAG}" \
+            --jq '.content' | base64 -d > /tmp/template.rb
+
+          mkdir -p /tmp/dmg
+          gh release download "$TAG" -R greatyingzi/macfan \
+            --pattern "macfan-${V}.dmg" --dir /tmp/dmg --clobber
+          SHA="$(sha256sum "/tmp/dmg/macfan-${V}.dmg" | cut -d' ' -f1)"
+          echo "digest of the published DMG: $SHA"
+
+          python3 - /tmp/template.rb "/tmp/macfan.rb" "$V" "$SHA" <<'PY'
+          import pathlib, sys
+          template, out, version, digest = sys.argv[1:5]
+          text = pathlib.Path(template).read_text()
+          for token, value in (("VERSION", version), ("SHA256", digest)):
+              text = text.replace("{{" + token + "}}", value)
+          assert "{{" not in text, "an unsubstituted placeholder survived"
+          pathlib.Path(out).write_text(text)
+          PY
+
+          if cmp -s Casks/macfan.rb /tmp/macfan.rb; then
+            echo "the cask already matches $TAG — nothing to do"
+            exit 0
+          fi
+          cp /tmp/macfan.rb Casks/macfan.rb
+          git -c user.name="macfan cask sync" \
+              -c user.email="greatyingzi@users.noreply.github.com" \
+              commit -q -am "macfan $V (scheduled sync)"
+          git push
+          echo "cask synced to $V"
