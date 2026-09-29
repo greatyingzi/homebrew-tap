@@ -15,11 +15,13 @@ cask "macfan" do
   app "macfan.app"
 
   caveats <<~EOS
-    macfan is ad-hoc signed rather than notarised, so macOS quarantines it on
-    first launch. Approve it once in System Settings > Privacy & Security, or
-    install without the quarantine flag:
+    macfan is ad-hoc signed rather than notarised, so macOS quarantines it and
+    the first launch needs one approval:
 
-      brew install --cask --no-quarantine macfan
+      xattr -dr com.apple.quarantine /Applications/macfan.app
+
+    ...or open System Settings > Privacy & Security and allow it there.
+    (Homebrew 7 removed , so that flag no longer exists.)
   EOS
 
   zap trash: [
