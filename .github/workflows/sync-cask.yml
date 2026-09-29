@@ -32,9 +32,16 @@ jobs:
           echo "latest release: $TAG"
 
           # The template is read from the released tag, so this repository cannot
-          # drift from the one the release scripts use.
-          gh api "repos/greatyingzi/macfan/contents/scripts/cask-template.rb?ref=${TAG}" \
-            --jq '.content' | base64 -d > /tmp/template.rb
+          # drift from the one the release scripts use. Older tags predate it, so
+          # fall back to the default branch — and fail loudly if neither has it,
+          # rather than leaving the cask stale behind a green run.
+          if ! gh api "repos/greatyingzi/macfan/contents/scripts/cask-template.rb?ref=${TAG}" \
+                 --jq '.content' 2>/dev/null | base64 -d > /tmp/template.rb || [ ! -s /tmp/template.rb ]; then
+            echo "no template at ${TAG}, falling back to the default branch"
+            gh api "repos/greatyingzi/macfan/contents/scripts/cask-template.rb" \
+              --jq '.content' | base64 -d > /tmp/template.rb
+          fi
+          [ -s /tmp/template.rb ] || { echo "could not read the cask template"; exit 1; }
 
           mkdir -p /tmp/dmg
           gh release download "$TAG" -R greatyingzi/macfan \
