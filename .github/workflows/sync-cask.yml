@@ -1,17 +1,27 @@
-name: Sync the cask with the latest release
+name: Sync the casks with the latest releases
 
-# The safety net. A release bumps this cask through a deploy key, but a release
-# can also be cut without that step (a tag pushed by hand, a run on another
-# machine). Then the cask silently goes stale and every user's `brew upgrade`
-# says "already up to date" while newer releases exist. This job runs inside the
-# tap repository, whose own token can write to it, so it needs no secret and no
-# personal token: it checks the latest release once a day and commits the cask
-# when it has fallen behind.
+# One loop for every application in this tap, driven by .github/casks.json: adding
+# an app is one stanza there, not another workflow. The job runs inside the tap
+# repository, whose own token can write to it, so it needs no secret and no
+# personal token.
+#
+# Why it exists at all: a release can be cut without bumping the cask (a tag
+# pushed by hand, a run on another machine). The cask then goes stale silently —
+# every user's `brew upgrade` says "already up to date" while newer releases
+# exist. That happened here once: this tap sat at macfan 0.2.0 while releases
+# reached 0.2.5, and nothing reported it.
+#
+# The logic is a checked-in script rather than inline shell so it can be run and
+# reviewed locally (python3 .github/sync_casks.py --dry-run).
 
 on:
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
+    inputs:
+      cask:
+        description: "Sync only this cask (leave empty for all of them)"
+        required: false
 
 permissions:
   contents: write
@@ -22,50 +32,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Bring Casks/macfan.rb up to the latest release
+      - name: Sync every cask listed in .github/casks.json
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          TAG="$(gh api repos/greatyingzi/macfan/releases/latest --jq '.tag_name')"
-          V="${TAG#v}"
-          echo "latest release: $TAG"
-
-          # The template is read from the released tag, so this repository cannot
-          # drift from the one the release scripts use. Older tags predate it, so
-          # fall back to the default branch — and fail loudly if neither has it,
-          # rather than leaving the cask stale behind a green run.
-          if ! gh api "repos/greatyingzi/macfan/contents/scripts/cask-template.rb?ref=${TAG}" \
-                 --jq '.content' 2>/dev/null | base64 -d > /tmp/template.rb || [ ! -s /tmp/template.rb ]; then
-            echo "no template at ${TAG}, falling back to the default branch"
-            gh api "repos/greatyingzi/macfan/contents/scripts/cask-template.rb" \
-              --jq '.content' | base64 -d > /tmp/template.rb
-          fi
-          [ -s /tmp/template.rb ] || { echo "could not read the cask template"; exit 1; }
-
-          mkdir -p /tmp/dmg
-          gh release download "$TAG" -R greatyingzi/macfan \
-            --pattern "macfan-${V}.dmg" --dir /tmp/dmg --clobber
-          SHA="$(sha256sum "/tmp/dmg/macfan-${V}.dmg" | cut -d' ' -f1)"
-          echo "digest of the published DMG: $SHA"
-
-          python3 - /tmp/template.rb "/tmp/macfan.rb" "$V" "$SHA" <<'PY'
-          import pathlib, sys
-          template, out, version, digest = sys.argv[1:5]
-          text = pathlib.Path(template).read_text()
-          for token, value in (("VERSION", version), ("SHA256", digest)):
-              text = text.replace("{{" + token + "}}", value)
-          assert "{{" not in text, "an unsubstituted placeholder survived"
-          pathlib.Path(out).write_text(text)
-          PY
-
-          if cmp -s Casks/macfan.rb /tmp/macfan.rb; then
-            echo "the cask already matches $TAG — nothing to do"
-            exit 0
-          fi
-          cp /tmp/macfan.rb Casks/macfan.rb
-          git -c user.name="macfan cask sync" \
-              -c user.email="greatyingzi@users.noreply.github.com" \
-              commit -q -am "macfan $V (scheduled sync)"
-          git push
-          echo "cask synced to $V"
+          set -o pipefail
+          python3 .github/sync_casks.py "${{ inputs.cask }}"

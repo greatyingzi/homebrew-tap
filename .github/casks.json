@@ -1,0 +1,14 @@
+[
+  {
+    "cask": "macfan",
+    "repo": "greatyingzi/macfan",
+    "asset": "macfan-{v}.dmg",
+    "template": "scripts/cask-template.rb"
+  },
+  {
+    "cask": "sparkwatch",
+    "repo": "greatyingzi/sparkwatch",
+    "asset": "SparkWatch-{v}.dmg",
+    "template": "Scripts/cask-template.rb"
+  }
+]
