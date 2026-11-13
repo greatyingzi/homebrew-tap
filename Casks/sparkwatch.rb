@@ -1,6 +1,6 @@
 cask "sparkwatch" do
-  version "0.3.10"
-  sha256 "a6a55916e72dfe1c9ec17cf2f2498c937b23039be70311c70895145eb54f0d24"
+  version "0.3.12"
+  sha256 "26b0cdb30f82b6b58d5c8806f2318de9d31ac6e0230f0ea27224de8fe9e5c082"
 
   url "https://github.com/greatyingzi/sparkwatch/releases/download/v#{version}/SparkWatch-#{version}.dmg"
   name "SparkWatch"
